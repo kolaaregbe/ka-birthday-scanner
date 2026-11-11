@@ -1,0 +1,179 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Kola Birthday - QR Access Control</title>
+  <script src="https://unpkg.com/html5-qrcode"></script>
+
+  <style>
+    body {
+      font-family: Arial, sans-serif;
+      background: #eef3fb;
+      text-align: center;
+      padding: 15px;
+      margin: 0;
+    }
+    h2 { color: #123b86; }
+    #reader {
+      max-width: 450px;
+      margin: 20px auto;
+      background: white;
+      padding: 10px;
+      border-radius: 12px;
+    }
+    #result {
+      max-width: 450px;
+      margin: 20px auto;
+      padding: 25px 12px;
+      border-radius: 12px;
+      font-size: 22px;
+      font-weight: bold;
+      color: white;
+      background: #374151;
+    }
+    button {
+      background: #123b86;
+      color: white;
+      border: 0;
+      padding: 16px 25px;
+      font-size: 18px;
+      font-weight: bold;
+      border-radius: 8px;
+      margin: 10px;
+    }
+    button:disabled { opacity: 0.5; }
+    .granted { background: #15803d !important; }
+    .used { background: #b91c1c !important; }
+    .invalid { background: #d97706 !important; }
+    .error { background: #374151 !important; }
+  </style>
+</head>
+
+<body>
+  <h2>KOLA BIRTHDAY</h2>
+  <h3>QR ACCESS CONTROL</h3>
+
+  <button id="startButton" onclick="startCamera()">START CAMERA</button>
+  <div id="reader"></div>
+  <div id="result">READY TO SCAN</div>
+
+  <script>
+    // We will insert your Apps Script web app URL here in a later step.
+    const API_URL = "PASTE_YOUR_APPS_SCRIPT_WEB_APP_URL_HERE";
+
+    let scanner;
+    let running = false;
+    let busy = false;
+
+    function showResult(message, style) {
+      const box = document.getElementById("result");
+      box.className = style;
+      box.textContent = message;
+    }
+
+    async function startCamera() {
+      if (running || busy) return;
+
+      if (typeof Html5Qrcode === "undefined") {
+        showResult("SCANNER LIBRARY NOT LOADED - CHECK INTERNET", "error");
+        return;
+      }
+
+      document.getElementById("startButton").disabled = true;
+      showResult("OPENING CAMERA...", "error");
+
+      try {
+        if (!scanner) scanner = new Html5Qrcode("reader");
+
+        await scanner.start(
+          { facingMode: "environment" },
+          { fps: 10, qrbox: { width: 250, height: 250 } },
+          onScanSuccess
+        );
+
+        running = true;
+        showResult("CAMERA READY - SCAN TICKET", "granted");
+      } catch (error) {
+        showResult("CAMERA ERROR: " + error, "error");
+      } finally {
+        document.getElementById("startButton").disabled = false;
+      }
+    }
+
+    function validateToken(token) {
+      return new Promise((resolve, reject) => {
+        if (API_URL.indexOf("https://") !== 0 ||
+            API_URL.includes("PASTE_YOUR")) {
+          reject(new Error("VALIDATION SERVICE NOT CONFIGURED"));
+          return;
+        }
+
+        const callbackName =
+          "ticketCallback_" + Date.now() + "_" +
+          Math.floor(Math.random() * 100000);
+
+        const script = document.createElement("script");
+        const timeout = setTimeout(() => {
+          cleanup();
+          reject(new Error("VALIDATION TIMED OUT"));
+        }, 15000);
+
+        function cleanup() {
+          clearTimeout(timeout);
+          delete window[callbackName];
+          script.remove();
+        }
+
+        window[callbackName] = function(response) {
+          cleanup();
+          resolve(response);
+        };
+
+        script.onerror = function() {
+          cleanup();
+          reject(new Error("COULD NOT CONTACT VALIDATION SERVICE"));
+        };
+
+        script.src = API_URL +
+          "?action=validate&token=" + encodeURIComponent(token) +
+          "&callback=" + callbackName;
+
+        document.body.appendChild(script);
+      });
+    }
+
+    async function onScanSuccess(decodedText) {
+      if (busy) return;
+      busy = true;
+      showResult("CHECKING TICKET...", "error");
+
+      try {
+        if (running) {
+          await scanner.stop();
+          running = false;
+        }
+
+        const response = await validateToken(decodedText.trim());
+
+        if (response.status === "GRANTED") {
+          showResult("ACCESS GRANTED", "granted");
+        } else if (response.status === "USED") {
+          showResult("ACCESS DENIED - ALREADY USED", "used");
+        } else if (response.status === "INVALID") {
+          showResult("INVALID QR CODE", "invalid");
+        } else {
+          showResult("SYSTEM ERROR - CALL SUPERVISOR", "error");
+        }
+      } catch (error) {
+        showResult("VALIDATION ERROR - CALL SUPERVISOR", "error");
+      }
+
+      setTimeout(() => {
+        busy = false;
+        startCamera();
+      }, 3000);
+    }
+  </script>
+</body>
+</html>
