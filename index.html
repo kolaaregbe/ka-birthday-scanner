@@ -118,8 +118,7 @@ async function validateToken(token) {
       method: "POST",
       headers: {
         "Content-Type": "application/json",
-        "apikey": SUPABASE_KEY,
-        "Authorization": "Bearer " + SUPABASE_KEY
+        "apikey": SUPABASE_KEY
       },
       body: JSON.stringify({ p_token: token })
     }
